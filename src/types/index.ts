@@ -24,3 +24,13 @@ export type {
   MouseState,
   MouseListenerState,
 } from './mouse';
+
+export type {
+  KeyBindings,
+  AppSettings,
+} from './setting';
+
+export {
+  DEFAULT_KEY_BINDINGS,
+  DEFAULT_SETTINGS,
+} from './setting';

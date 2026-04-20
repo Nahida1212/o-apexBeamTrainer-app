@@ -6,6 +6,7 @@ import { initGamepad, stopGamepadPolling, getGamepadState } from "@/services/gam
 import { initMouseListener, stopMouseListener, isMouseListenerRunning } from "@/services/mouseService";
 import { soundService } from "@/services/soundService";
 import { useDirectionWindow } from "@/composables/useDirectionWindow";
+import { getKeyBindings } from "@/services/settingService";
 
 // 瞄准状态延迟相关
 const aimingDelayTimer = ref<ReturnType<typeof setTimeout> | null>(null);
@@ -96,6 +97,37 @@ const config = ref<RecoilTrainingConfig>({
   targetAccuracy: 85,
 });
 
+// 按键绑定
+const keyBindings = ref({
+  fire: 'right_trigger',
+  aim: 'left_trigger',
+  toggle: 'a',
+});
+
+// 按键显示名称映射
+const buttonDisplayNames: Record<string, string> = {
+  left_trigger: 'LT',
+  right_trigger: 'RT',
+  a: 'A',
+  b: 'B',
+  x: 'X',
+  y: 'Y',
+  left_shoulder: 'LB',
+  right_shoulder: 'RB',
+  back: 'Back',
+  start: 'Start',
+  left_thumb: 'L3',
+  right_thumb: 'R3',
+  dpad_up: 'D-pad Up',
+  dpad_down: 'D-pad Down',
+  dpad_left: 'D-pad Left',
+  dpad_right: 'D-pad Right',
+};
+
+// 计算显示名称
+const aimButtonDisplayName = computed(() => buttonDisplayNames[keyBindings.value.aim] || keyBindings.value.aim);
+const fireButtonDisplayName = computed(() => buttonDisplayNames[keyBindings.value.fire] || keyBindings.value.fire);
+
 // 训练状态
 const isTraining = ref(false);
 const isAiming = ref(false);
@@ -105,14 +137,43 @@ const scheduledTasks = ref<ReturnType<typeof setTimeout>[]>([]);
 const gamepadPollingInterval = ref<ReturnType<typeof setTimeout> | null>(null);
 
 
+// 根据绑定名称获取按键/扳机状态
+const getButtonValue = (state: any, buttonName: string): number => {
+  // 扳机
+  if (buttonName === 'left_trigger') return state.left_trigger;
+  if (buttonName === 'right_trigger') return state.right_trigger;
+  // 按钮
+  const buttonMap: Record<string, keyof typeof state.buttons> = {
+    a: 'a',
+    b: 'b',
+    x: 'x',
+    y: 'y',
+    left_shoulder: 'left_shoulder',
+    right_shoulder: 'right_shoulder',
+    back: 'back',
+    start: 'start',
+    left_thumb: 'left_thumb',
+    right_thumb: 'right_thumb',
+    dpad_up: 'dpad_up',
+    dpad_down: 'dpad_down',
+    dpad_left: 'dpad_left',
+    dpad_right: 'dpad_right',
+  };
+  const mapped = buttonMap[buttonName];
+  if (mapped && state.buttons[mapped]) {
+    return state.buttons[mapped] ? 255 : 0;
+  }
+  return 0;
+};
+
 // 游戏手柄状态检查
 const checkGamepadState = async () => {
   try {
     const state = await getGamepadState(0);
     if (!state) return;
 
-    // 检查LT（左扳机）是否按下（瞄准状态）- 添加防抖延迟
-    const isTriggerPressed = state.left_trigger > 100; // 阈值100/255
+    // 检查瞄准按键是否按下（瞄准状态）- 添加防抖延迟
+    const isTriggerPressed = getButtonValue(state, keyBindings.value.aim) > 100; // 阈值100/255
 
     if (isTriggerPressed) {
       // 扳机按下，延迟设置瞄准状态（防抖）
@@ -138,9 +199,9 @@ const checkGamepadState = async () => {
       }
     }
 
-    // 检查RT（右扳机）是否按下（射击状态）
+    // 检查开火按键是否按下（射击状态）
     const previousShooting = isShooting.value;
-    isShooting.value = state.right_trigger > 100; // 阈值100/255
+    isShooting.value = getButtonValue(state, keyBindings.value.fire) > 100; // 阈值100/255
 
     // 射击状态变化
     if (previousShooting !== isShooting.value) {
@@ -301,7 +362,7 @@ const startTraining = async () => {
     // 启动手柄轮询
     await startGamepadPolling();
 
-    alert("训练已开始！\n请先按下LT键进入瞄准状态，然后按下RT键开始射击。");
+    alert(`训练已开始！\n请先按下${aimButtonDisplayName.value}键进入瞄准状态，然后按下${fireButtonDisplayName.value}键开始射击。`);
 
   } catch (error) {
     console.error("开始训练失败:", error);
@@ -345,13 +406,21 @@ const stopTraining = async () => {
   alert("训练已停止");
 };
 
-// 组件加载时预加载压枪数据
+// 组件加载时预加载压枪数据和按键绑定
 onMounted(async () => {
   try {
     await loadRecoilData();
     console.log("压枪数据预加载完成");
   } catch (error) {
     console.error("压枪数据预加载失败:", error);
+  }
+
+  try {
+    const bindings = await getKeyBindings();
+    keyBindings.value = bindings;
+    console.log("按键绑定加载完成:", bindings);
+  } catch (error) {
+    console.error("按键绑定加载失败:", error);
   }
 });
 
@@ -518,8 +587,8 @@ const resetConfig = () => {
           </div>
         </div>
         <div class="status-instruction">
-          <p v-if="!isAiming">1. 按下 <strong>LT</strong> 键进入瞄准状态</p>
-          <p v-if="isAiming && !isShooting">2. 按下 <strong>RT</strong> 键开始射击训练</p>
+          <p v-if="!isAiming">1. 按下 <strong>{{ aimButtonDisplayName }}</strong> 键进入瞄准状态</p>
+          <p v-if="isAiming && !isShooting">2. 按下 <strong>{{ fireButtonDisplayName }}</strong> 键开始射击训练</p>
           <p v-if="isShooting">3. 根据压枪提示进行练习</p>
         </div>
       </div>

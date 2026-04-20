@@ -1,37 +1,66 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router';
-import { ref } from 'vue';
-import { useMouseListener } from '@/composables';
-import type { MouseState } from '@/types';
+import { ref, onMounted, computed } from 'vue';
+import { getKeyBindings } from '@/services/settingService';
 
 const route = useRoute();
 const router = useRouter();
 
-// 鼠标状态 - 默认设置为空闲状态
-const mouseState = ref<MouseState>('idle');
 
-// 尝试使用鼠标监听器，如果失败则使用默认值
-try {
-  const mouseListener = useMouseListener();
-  mouseState.value = mouseListener.mouseState.value;
-} catch (error) {
-  console.warn('无法加载鼠标监听器，使用默认状态:', error);
-}
+// 按键绑定
+const keyBindings = ref({
+  fire: 'right_trigger',
+  aim: 'left_trigger',
+  toggle: 'a',
+});
+
+// 按键显示名称映射
+const buttonDisplayNames: Record<string, string> = {
+  left_trigger: 'LT',
+  right_trigger: 'RT',
+  a: 'A',
+  b: 'B',
+  x: 'X',
+  y: 'Y',
+  left_shoulder: 'LB',
+  right_shoulder: 'RB',
+  back: 'Back',
+  start: 'Start',
+  left_thumb: 'L3',
+  right_thumb: 'R3',
+  dpad_up: 'D-pad Up',
+  dpad_down: 'D-pad Down',
+  dpad_left: 'D-pad Left',
+  dpad_right: 'D-pad Right',
+};
+
+// 计算绑定显示文本
+const bindingDisplayText = computed(() => {
+  const fire = buttonDisplayNames[keyBindings.value.fire] || keyBindings.value.fire;
+  const aim = buttonDisplayNames[keyBindings.value.aim] || keyBindings.value.aim;
+  const toggle = buttonDisplayNames[keyBindings.value.toggle] || keyBindings.value.toggle;
+  return `开火:${fire} 瞄准:${aim} 开关:${toggle}`;
+});
+
+// 短版本显示（用于按钮）
+const bindingShortText = computed(() => '绑定快捷');
+
+
+// 加载按键绑定
+onMounted(async () => {
+  try {
+    const bindings = await getKeyBindings();
+    keyBindings.value = bindings;
+    console.log('按键绑定加载完成:', bindings);
+  } catch (error) {
+    console.error('按键绑定加载失败:', error);
+  }
+});
 
 const go = (name: string) => {
   router.push({ name });
 };
 
-// 鼠标状态对应的样式和文本
-const mouseStateConfig = {
-  idle: { icon: '🖱️', text: '空闲', color: '#888', bgColor: '#f0f0f0' },
-  aiming: { icon: '🎯', text: '瞄准', color: '#f59e0b', bgColor: '#fef3c7' },
-  shooting: { icon: '🔫', text: '射击', color: '#ef4444', bgColor: '#fee2e2' },
-} as const;
-
-const getMouseStateDisplay = (state: MouseState) => {
-  return mouseStateConfig[state] || mouseStateConfig.idle;
-};
 </script>
 
 <template>
@@ -42,17 +71,15 @@ const getMouseStateDisplay = (state: MouseState) => {
         <p class="nav-subtitle">借助音频与可视提示练习武器的横移压枪</p>
       </div>
       <div class="nav-right">
-        <!-- 鼠标状态显示 -->
-        <div
-          class="mouse-state-display"
-          :style="{
-            '--state-color': getMouseStateDisplay(mouseState).color,
-            '--state-bg': getMouseStateDisplay(mouseState).bgColor,
-          }"
+        <!-- 绑定快捷按钮 -->
+        <button
+          class="binding-shortcut-btn"
+          :class="{ active: route.name === 'binding' }"
+          :title="bindingDisplayText"
+          @click="go('binding')"
         >
-          <span class="mouse-icon">{{ getMouseStateDisplay(mouseState).icon }}</span>
-          <span class="mouse-text">{{ getMouseStateDisplay(mouseState).text }}</span>
-        </div>
+          {{ bindingShortText }}
+        </button>
 
         <button
           class="nav-link"
@@ -120,6 +147,35 @@ const getMouseStateDisplay = (state: MouseState) => {
 .nav-right {
   display: flex;
   gap: 8px;
+}
+
+/* 绑定快捷按钮 */
+.binding-shortcut-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background-color: #f0f0f0;
+  color: #666;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.binding-shortcut-btn:hover {
+  background-color: #e0e0e0;
+  color: #333;
+}
+
+.binding-shortcut-btn.active {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border-color: #667eea;
 }
 
 .nav-link {

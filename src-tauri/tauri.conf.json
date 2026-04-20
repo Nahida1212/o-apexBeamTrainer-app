@@ -39,6 +39,11 @@
       "csp": null
     }
   },
+  "plugins": {
+    "fs": {
+      "requireLiteralLeadingDot": false
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
@@ -48,6 +53,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": ["resources/time.txt"]
   }
 }

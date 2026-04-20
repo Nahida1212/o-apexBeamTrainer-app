@@ -6,6 +6,7 @@ import { ref, onMounted } from "vue";
 import { Window } from "@tauri-apps/api/window";
 import { MainLayout } from "@/layouts";
 import { loadRecoilData } from "@/services/recoilDataService";
+import { getSettings } from "@/services/settingService";
 
 // 当前窗口标签
 const windowLabel = ref<string>("main");
@@ -21,6 +22,12 @@ onMounted(async () => {
     // 只有主窗口需要加载压枪数据
     if (label === "main") {
       await loadRecoilData();
+      // 初始化设置（创建默认setting.json）
+      try {
+        await getSettings();
+      } catch (error) {
+        console.error('初始化设置失败:', error);
+      }
     }
   } catch (error) {
     console.error("获取窗口标签失败:", error);

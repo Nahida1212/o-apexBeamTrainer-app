@@ -2,6 +2,7 @@
  * services/recoilDataService.ts - 压枪数据管理服务
  */
 import type { WeaponRecoilData } from "@/types";
+import { readTextFile, BaseDirectory } from '@tauri-apps/plugin-fs';
 
 let recoilDataCache: WeaponRecoilData[] = [];
 
@@ -14,8 +15,8 @@ export async function loadRecoilData(): Promise<WeaponRecoilData[]> {
   }
 
   try {
-    const response = await fetch("/src/assets/time.txt");
-    const text = await response.text();
+    // 使用Tauri fs API读取打包的资源文件
+    const text = await readTextFile('resources/time.txt', { baseDir: BaseDirectory.Resource });
 
     // 将JavaScript对象字面量转换为标准JSON格式
     // 为所有未被引号包围的属性名添加引号
@@ -27,6 +28,7 @@ export async function loadRecoilData(): Promise<WeaponRecoilData[]> {
     return recoilDataCache;
   } catch (error) {
     console.error("✗ 加载压枪数据失败:", error);
+    console.error("Error details:", JSON.stringify(error));
     return [];
   }
 }
