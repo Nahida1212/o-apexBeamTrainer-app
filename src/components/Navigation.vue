@@ -43,7 +43,7 @@ const bindingDisplayText = computed(() => {
 });
 
 // 短版本显示（用于按钮）
-const bindingShortText = computed(() => '绑定快捷');
+const bindingShortText = computed(() => '绑定按键');
 
 
 // 加载按键绑定

@@ -68,8 +68,26 @@ const getShortDisplayName = (buttonValue: string) => {
 const loadBindings = async () => {
   try {
     const bindings = await getKeyBindings();
-    currentBindings.value = bindings;
-    console.log('按键绑定加载成功:', bindings);
+
+    // 清理绑定数据，只保留有效键
+    const validKeys: (keyof KeyBindings)[] = ['fire', 'aim', 'toggle'];
+    const cleanedBindings: KeyBindings = { fire: '', aim: '', toggle: '' };
+
+    // 从原始数据中复制有效键的值
+    for (const key of validKeys) {
+      const value = (bindings as any)[key];
+      if (value !== undefined) {
+        cleanedBindings[key] = value;
+      } else {
+        // 如果值不存在，使用默认值
+        if (key === 'fire') cleanedBindings[key] = 'right_trigger';
+        else if (key === 'aim') cleanedBindings[key] = 'left_trigger';
+        else if (key === 'toggle') cleanedBindings[key] = 'a';
+      }
+    }
+
+    currentBindings.value = cleanedBindings;
+    console.log('按键绑定加载成功:', cleanedBindings);
   } catch (error) {
     console.error('加载按键绑定失败:', error);
   }
@@ -162,33 +180,63 @@ const startListening = async (bindingKey: keyof KeyBindings) => {
 
         const pressedButton = detectPressedButton(state);
         if (pressedButton) {
-          // 更新绑定
-          const newBindings = { ...currentBindings.value };
+          // 立即停止轮询，防止重复处理
+          if (pollingInterval.value) {
+            clearInterval(pollingInterval.value);
+            pollingInterval.value = null;
+          }
 
-          // 检查是否已被其他功能使用
-          const usedByOther = Object.entries(newBindings).find(
-            ([key, value]) => key !== listeningFor.value && value === pressedButton
+          const bindingKey = listeningFor.value;
+          if (!bindingKey) return;
+
+          // 获取当前功能的原绑定值
+          const currentBinding = currentBindings.value[bindingKey];
+
+          // 如果已经是当前功能的绑定，直接返回
+          if (currentBinding === pressedButton) {
+            console.log('已经是当前功能的绑定，无需更改');
+            listeningFor.value = null;
+            return;
+          }
+
+          // 定义有效的按键绑定键
+          const validKeys: (keyof KeyBindings)[] = ['fire', 'aim', 'toggle'];
+
+          // 创建新的绑定对象，只包含有效键
+          const newBindings: KeyBindings = { ...currentBindings.value };
+
+          // 确保newBindings只包含有效键，移除无效键
+          for (const key of Object.keys(newBindings)) {
+            if (!validKeys.includes(key as keyof KeyBindings)) {
+              delete newBindings[key as keyof KeyBindings];
+            }
+          }
+
+          // 检查是否已被其他功能使用，只检查有效的键
+          const usedByOther = validKeys.find(
+            (key) => key !== bindingKey && newBindings[key] === pressedButton
           );
 
           if (usedByOther) {
-            // 交换按键
-            const [otherKey] = usedByOther;
-            newBindings[otherKey as keyof KeyBindings] = newBindings[listeningFor.value];
+            // 按键已被其他功能使用
+            const otherKey = usedByOther;
+
+            // 如果当前功能有非空绑定值，交换两个功能的按键
+            if (currentBinding && currentBinding !== '') {
+              newBindings[otherKey] = currentBinding;
+            } else {
+              // 如果当前功能没有绑定值或为空，将其他功能的绑定设为空
+              newBindings[otherKey] = '';
+            }
           }
 
-          newBindings[listeningFor.value] = pressedButton;
+          newBindings[bindingKey] = pressedButton;
 
           await updateKeyBindings(newBindings);
           currentBindings.value = newBindings;
 
           console.log('按键绑定更新成功:', newBindings);
           listeningFor.value = null;
-
-          // 停止轮询
-          if (pollingInterval.value) {
-            clearInterval(pollingInterval.value);
-            pollingInterval.value = null;
-          }
         }
       } catch (error) {
         console.error('检测手柄状态失败:', error);
