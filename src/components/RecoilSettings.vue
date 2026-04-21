@@ -8,7 +8,9 @@ import { soundService } from "@/services/soundService";
 import { useDirectionWindow } from "@/composables/useDirectionWindow";
 import { getKeyBindings } from "@/services/settingService";
 
-// 瞄准状态延迟相关
+// 瞄准模式切换相关状态
+const aimMode = ref<'hold' | 'toggle'>('hold');
+const previousAimButtonState = ref(false);
 const aimingDelayTimer = ref<ReturnType<typeof setTimeout> | null>(null);
 
 // 方向窗口控制（置顶显示）
@@ -172,31 +174,56 @@ const checkGamepadState = async () => {
     const state = await getGamepadState(0);
     if (!state) return;
 
-    // 检查瞄准按键是否按下（瞄准状态）- 添加防抖延迟
-    const isTriggerPressed = getButtonValue(state, keyBindings.value.aim) > 100; // 阈值100/255
+    // 检查瞄准按键是否按下
+    const isAimButtonPressed = getButtonValue(state, keyBindings.value.aim) > 100; // 阈值100/255
 
-    if (isTriggerPressed) {
-      // 扳机按下，延迟设置瞄准状态（防抖）
-      if (aimingDelayTimer.value) {
-        clearTimeout(aimingDelayTimer.value);
-      }
-      aimingDelayTimer.value = setTimeout(() => {
-        if (isAiming.value !== true) {
-          isAiming.value = true;
-          console.log("进入瞄准状态");
+    if (aimMode.value === 'hold') {
+      // 按住模式：按下瞄准，松开取消
+      if (isAimButtonPressed) {
+        // 扳机按下，延迟设置瞄准状态（防抖）
+        if (aimingDelayTimer.value) {
+          clearTimeout(aimingDelayTimer.value);
         }
-        aimingDelayTimer.value = null;
-      }, 100); // 100ms延迟
+        aimingDelayTimer.value = setTimeout(() => {
+          if (isAiming.value !== true) {
+            isAiming.value = true;
+            console.log("进入瞄准状态（按住模式）");
+          }
+          aimingDelayTimer.value = null;
+        }, 100); // 100ms延迟
+      } else {
+        // 扳机释放，立即退出瞄准状态
+        if (aimingDelayTimer.value) {
+          clearTimeout(aimingDelayTimer.value);
+          aimingDelayTimer.value = null;
+        }
+        if (isAiming.value !== false) {
+          isAiming.value = false;
+          console.log("退出瞄准状态（按住模式）");
+        }
+      }
     } else {
-      // 扳机释放，立即退出瞄准状态
-      if (aimingDelayTimer.value) {
-        clearTimeout(aimingDelayTimer.value);
-        aimingDelayTimer.value = null;
+      // 切换模式：按下切换瞄准状态
+      const currentAimButtonState = isAimButtonPressed;
+      const wasAimButtonPressed = previousAimButtonState.value;
+
+      // 检测按键按下事件（从释放到按下）
+      if (currentAimButtonState && !wasAimButtonPressed && !aimingDelayTimer.value) {
+        // 切换瞄准状态
+        isAiming.value = !isAiming.value;
+        console.log(`切换瞄准状态：${isAiming.value ? '进入' : '退出'}瞄准（切换模式）`);
+
+        // 添加防抖延迟，防止重复触发
+        if (aimingDelayTimer.value) {
+          clearTimeout(aimingDelayTimer.value);
+        }
+        aimingDelayTimer.value = setTimeout(() => {
+          aimingDelayTimer.value = null;
+        }, 200); // 200ms防抖
       }
-      if (isAiming.value !== false) {
-        isAiming.value = false;
-        console.log("退出瞄准状态");
-      }
+
+      // 更新前一个状态
+      previousAimButtonState.value = currentAimButtonState;
     }
 
     // 检查开火按键是否按下（射击状态）
@@ -207,8 +234,10 @@ const checkGamepadState = async () => {
     if (previousShooting !== isShooting.value) {
       if (isShooting.value) {
         console.log("开始射击");
-        // 开始射击时启动压枪时间轴任务（使用即时扳机状态，避免延迟影响）
-        if (isTriggerPressed && isTraining.value) {
+        // 开始射击时启动压枪时间轴任务
+        // 在按住模式下使用即时扳机状态，在切换模式下使用瞄准状态
+        const canStartShooting = aimMode.value === 'hold' ? isAimButtonPressed : isAiming.value;
+        if (canStartShooting && isTraining.value) {
           startRecoilTasks();
         }
       } else {
@@ -358,6 +387,11 @@ const startTraining = async () => {
     isTraining.value = true;
     isAiming.value = false;
     isShooting.value = false;
+    previousAimButtonState.value = false;
+    if (aimingDelayTimer.value) {
+      clearTimeout(aimingDelayTimer.value);
+      aimingDelayTimer.value = null;
+    }
 
     // 启动手柄轮询
     await startGamepadPolling();
@@ -377,6 +411,7 @@ const stopTraining = async () => {
   isTraining.value = false;
   isAiming.value = false;
   isShooting.value = false;
+  previousAimButtonState.value = false;
 
   // 清除瞄准状态延迟定时器
   if (aimingDelayTimer.value) {
@@ -431,6 +466,18 @@ onUnmounted(() => {
   }
 });
 
+const switchAimMode = (mode: 'hold' | 'toggle') => {
+  if (aimMode.value === mode) return;
+  aimMode.value = mode;
+  // 重置瞄准相关状态
+  isAiming.value = false;
+  previousAimButtonState.value = false;
+  if (aimingDelayTimer.value) {
+    clearTimeout(aimingDelayTimer.value);
+    aimingDelayTimer.value = null;
+  }
+};
+
 const resetConfig = () => {
   config.value = {
     duration: 60,
@@ -439,6 +486,12 @@ const resetConfig = () => {
     enableVisual: true,
     targetAccuracy: 85,
   };
+  aimMode.value = 'hold';
+  previousAimButtonState.value = false;
+  if (aimingDelayTimer.value) {
+    clearTimeout(aimingDelayTimer.value);
+    aimingDelayTimer.value = null;
+  }
 };
 
 </script>
@@ -556,6 +609,22 @@ const resetConfig = () => {
             "
           >
             {{ { visual: '仅可视', audio: '仅音频', both: '双重反馈' }[type] }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 瞄准模式 -->
+      <div class="setting-group">
+        <label class="setting-label">瞄准模式</label>
+        <div class="feedback-type-options">
+          <button
+            v-for="mode in ['hold', 'toggle']"
+            :key="mode"
+            class="type-btn"
+            :class="{ active: aimMode === mode }"
+            @click="switchAimMode(mode as 'hold' | 'toggle')"
+          >
+            {{ { hold: '按住模式', toggle: '切换模式' }[mode] }}
           </button>
         </div>
       </div>
