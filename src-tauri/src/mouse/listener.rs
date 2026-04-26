@@ -28,32 +28,27 @@ pub struct MouseListenerManager {
 }
 
 impl MouseListenerManager {
-    /// 创建新的鼠标监听管理器
+    /// 创建新的鼠标监听管理器，同时启动 rdev::listen 后台线程（只启动一次）
     pub fn new() -> Self {
-        Self {
+        let manager = Self {
             running: Arc::new(AtomicBool::new(false)),
             state: Arc::new(AtomicU8::new(0)), // 默认为 Idle
             left_pressed: Arc::new(AtomicBool::new(false)),
             right_pressed: Arc::new(AtomicBool::new(false)),
-        }
+        };
+        manager.spawn_listener_thread();
+        manager
     }
 
-    /// 启动鼠标监听循环
-    pub fn start_listening(&self) {
-        if self.running.load(Ordering::SeqCst) {
-            println!("[Mouse] 监听已在运行中");
-            return;
-        }
-
-        self.running.store(true, Ordering::SeqCst);
-        println!("[Mouse] 设置running标志为true，准备启动监听线程...");
+    /// 启动 rdev::listen 后台线程（只由 new() 调用一次）
+    fn spawn_listener_thread(&self) {
         let running = Arc::clone(&self.running);
         let state = Arc::clone(&self.state);
         let left_pressed = Arc::clone(&self.left_pressed);
         let right_pressed = Arc::clone(&self.right_pressed);
 
         thread::spawn(move || {
-            println!("[Mouse] 监听线程已启动，开始监听鼠标输入...");
+            println!("[Mouse] rdev::listen 后台线程已启动");
 
             // 为回调创建 Arc 的克隆
             let running_cb = Arc::clone(&running);
@@ -107,33 +102,29 @@ impl MouseListenerManager {
                 );
             };
 
-            // 在单独的线程中运行 rdev::listen，因为它会阻塞
-            let _running_listen = Arc::clone(&running);
-            thread::spawn(move || {
-                println!("[Mouse] rdev::listen线程启动，开始监听全局鼠标事件...");
-                if let Err(error) = rdev::listen(callback) {
-                    eprintln!("[Mouse] 监听鼠标事件失败: {:?}", error);
-                } else {
-                    println!("[Mouse] rdev::listen正常退出");
-                }
-                println!("[Mouse] 监听线程已退出");
-            });
-
-            // 主循环定期检查 running 标志
-            while running.load(Ordering::SeqCst) {
-                thread::sleep(std::time::Duration::from_millis(100));
+            // rdev::listen 会阻塞，这个线程就是专门跑它的
+            println!("[Mouse] 开始监听全局鼠标事件...");
+            if let Err(error) = rdev::listen(callback) {
+                eprintln!("[Mouse] 监听鼠标事件失败: {:?}", error);
+            } else {
+                println!("[Mouse] rdev::listen 正常退出");
             }
-
-            // 退出时重置状态
-            left_pressed.store(false, Ordering::SeqCst);
-            right_pressed.store(false, Ordering::SeqCst);
-            state.store(0, Ordering::SeqCst);
-
-            println!("[Mouse] 鼠标监听循环已停止");
+            println!("[Mouse] rdev::listen 后台线程已退出");
         });
     }
 
-    /// 停止鼠标监听
+    /// 启动鼠标监听（只切换 running 标志，不重新创建线程）
+    pub fn start_listening(&self) {
+        if self.running.load(Ordering::SeqCst) {
+            println!("[Mouse] 监听已在运行中");
+            return;
+        }
+
+        self.running.store(true, Ordering::SeqCst);
+        println!("[Mouse] 设置 running 标志为 true");
+    }
+
+    /// 停止鼠标监听（只切换 running 标志，不影响 rdev::listen 线程）
     pub fn stop_listening(&self) {
         self.running.store(false, Ordering::SeqCst);
         self.left_pressed.store(false, Ordering::SeqCst);

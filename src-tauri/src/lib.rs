@@ -98,17 +98,22 @@ fn is_gamepad_initialized() -> bool {
 fn init_mouse_listener() -> String {
     let mut manager_guard = MOUSE_LISTENER_MANAGER.lock().unwrap();
 
-    if manager_guard.is_none() {
-        println!("[Rust] init_mouse_listener: 创建新的鼠标监听管理器");
-        let manager = MouseListenerManager::new();
-        manager.start_listening();
-        *manager_guard = Some(manager);
-        println!("[Rust] init_mouse_listener: 监听已启动");
-        "Mouse listener initialized and listening started".to_string()
-    } else {
-        println!("[Rust] init_mouse_listener: 监听器已存在");
-        "Mouse listener already initialized".to_string()
+    if let Some(manager) = manager_guard.as_ref() {
+        if !manager.is_running() {
+            println!("[Rust] init_mouse_listener: 重启鼠标监听");
+            manager.start_listening();
+            return "Mouse listener restarted".to_string();
+        }
+        println!("[Rust] init_mouse_listener: 监听器已存在且正在运行");
+        return "Mouse listener already initialized".to_string();
     }
+
+    println!("[Rust] init_mouse_listener: 创建新的鼠标监听管理器");
+    let manager = MouseListenerManager::new();
+    manager.start_listening();
+    *manager_guard = Some(manager);
+    println!("[Rust] init_mouse_listener: 监听已启动");
+    "Mouse listener initialized and listening started".to_string()
 }
 
 /// 停止鼠标监听
