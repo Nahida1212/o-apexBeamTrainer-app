@@ -49,41 +49,50 @@ fn stop_gamepad_polling() -> String {
 #[tauri::command]
 fn get_gamepad_state(user_index: u32) -> Option<gamepad::xinput::ControllerState> {
     let manager_guard = GAMEPAD_MANAGER.lock().unwrap();
-    let mut state = manager_guard.as_ref()?.get_state(user_index)?;
+    // 不直接 ? 返回，先尝试获取手柄状态，允许无手柄时走鼠标回退
+    let gamepad_state = manager_guard.as_ref().and_then(|m| m.get_state(user_index));
 
-    // 保存原始扳机值用于调试
-    let original_left = state.left_trigger;
-    let original_right = state.right_trigger;
-
-    // 检查鼠标状态并合并到手柄状态中
     let mouse_guard = MOUSE_LISTENER_MANAGER.lock().unwrap();
-    let mouse_manager_exists = mouse_guard.as_ref().is_some();
-    println!("[Gamepad] 获取手柄状态，鼠标管理器存在: {}", mouse_manager_exists);
-    if let Some(mouse_manager) = mouse_guard.as_ref() {
-        // 鼠标左键 -> 右扳机 (RT)
-        let left_pressed = mouse_manager.is_left_pressed();
-        if left_pressed {
-            state.right_trigger = 255;
-        }
+    let mouse_exists = mouse_guard.as_ref().is_some();
+    let mouse_left = mouse_guard.as_ref().map_or(false, |m| m.is_left_pressed());
+    let mouse_right = mouse_guard.as_ref().map_or(false, |m| m.is_right_pressed());
 
-        // 鼠标右键 -> 左扳机 (LT)
-        let right_pressed = mouse_manager.is_right_pressed();
-        if right_pressed {
-            state.left_trigger = 255;
-        }
+    match gamepad_state {
+        Some(mut state) => {
+            // 保存原始扳机值用于调试
+            let original_left = state.left_trigger;
+            let original_right = state.right_trigger;
 
-        // 调试日志
-        if left_pressed || right_pressed || original_left > 0 || original_right > 0 {
+            // 鼠标左键 -> 右扳机 (RT)
+            if mouse_left { state.right_trigger = 255; }
+            // 鼠标右键 -> 左扳机 (LT)
+            if mouse_right { state.left_trigger = 255; }
+
+            // 调试日志
+            if mouse_left || mouse_right || original_left > 0 || original_right > 0 {
+                println!(
+                    "[Gamepad] 状态更新 - 原始: LT={}, RT={} | 鼠标: L={}, R={} | 最终: LT={}, RT={}",
+                    original_left, original_right,
+                    mouse_left, mouse_right,
+                    state.left_trigger, state.right_trigger
+                );
+            }
+
+            Some(state)
+        }
+        None if mouse_exists => {
+            // 无手柄连接，从鼠标数据合成状态
+            let mut state = gamepad::xinput::ControllerState::default();
+            if mouse_left { state.right_trigger = 255; }
+            if mouse_right { state.left_trigger = 255; }
             println!(
-                "[Gamepad] 状态更新 - 原始: LT={}, RT={} | 鼠标: L={}, R={} | 最终: LT={}, RT={}",
-                original_left, original_right,
-                left_pressed, right_pressed,
-                state.left_trigger, state.right_trigger
+                "[Gamepad] 无手柄，使用鼠标状态: 左键={}, 右键={}",
+                mouse_left, mouse_right
             );
+            Some(state)
         }
+        None => None
     }
-
-    Some(state)
 }
 
 /// 检查手柄是否已初始化
